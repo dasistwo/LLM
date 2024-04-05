@@ -35,10 +35,7 @@ def print_layer_size(model: torch.nn.Module):
         if any(isinstance(module[1], cls) for cls in qlinear_types):
             proj = module[0].split(".")[-1]
             proj_set[proj] = module[1]
-    try:
-        del proj_set["lm_head"]
-    except KeyError:
-        pass
+
     proj_set.keys()
     for attr, w in proj_set.items():
         if hasattr(model, "quantize_config"):
@@ -52,40 +49,59 @@ def print_layer_size(model: torch.nn.Module):
 
 
 def get_layer_weights(
-    model: torch.nn.Module, neglect_list: list[str] = ["lm_head"]
+    model: torch.nn.Module,
+    layer_list: list[int] = [],
+    neglect_list: list[str] = ["lm_head"],
+    flatten: bool = True
 ) -> pd.DataFrame:
-    
+
     if issubclass(type(model), SwitchTransformersModel):
-        return get_ST_layer_weights(model, [0, 1], neglect_list)
-    
+        return get_layer_weights_ST(model, [0, 1], neglect_list)
+
     # Get the weights of the projection layers
+    # Do not collect the weights of the layers in the neglect_list
     proj_set = {}
-    for name, module in model.named_modules():
-        if isinstance(module, torch.nn.Linear):
-            proj = name.split(".")[-1]
-            if proj in neglect_list:
-                continue
-            proj_set[proj] = True
-        elif isinstance(module, torch.nn.ModuleList):
-            layerlist = module
+    for name, param in model.named_parameters():
+        if any(substring in name for substring in neglect_list):
+            continue
+        proj_name = name.split(".")[-2]
+        proj_set[proj_name] = True
 
-    # if layerlist is not defined, raise an error
+    for _, module in model.named_modules():
+        if isinstance(module, torch.nn.ModuleList):
+            layer_modulelist = module
+
+    # if layer_modulelist is not defined, raise an error
     try:
-        layerlist
-    except NameError:
-        raise ValueError("layerlist is not defined. Please check the model structure.")
+        if len(layer_list) == 0:
+            layer_list = list(range(len(layer_modulelist)))
+        else:
+            layer_modulelist = [layer_modulelist[i] for i in layer_list if i < len(layer_modulelist)]
 
-    df = pd.DataFrame(index=range(len(layerlist)), columns=list(proj_set.keys()))
-    for i, layer in enumerate(layerlist):
-        for name, module in layer.named_modules():
-            if isinstance(module, torch.nn.Linear) and name.split(".")[-1] in proj_set.keys():
-                w = module.weight.detach().numpy()
-                df.loc[i, name.split(".")[-1]] = w
+    except NameError:
+        raise ValueError("layer_modulelist is not defined. Please check the model structure.")
+
+    df = pd.DataFrame(index=layer_list, columns=list(proj_set.keys()))
+    for i in layer_list:
+        for name, param in layer_modulelist[i].named_parameters():
+            layername = name.split(".")[-2]
+            if layername in proj_set.keys():
+                w = param.detach().cpu().numpy()
+                # If there's data in the dataframe, concatenate the data.
+                try:
+                    concat_data = np.concatenate(
+                        (df[layername][i], w.flatten() if flatten else w), axis=0
+                    )
+                    df.loc[i, layername] = concat_data
+                except:
+                    df.loc[i, layername] = w.flatten() if flatten else w
 
     return df
 
-def get_ST_layer_weights(
+def get_layer_weights_ST(
     model: SwitchTransformersModel,
+    exportEncoder: bool = False,
+    exportDecoder: bool = True,
     layer_list: list[int] = [0, 1],
     neglect_list: list[str] = ["q", "k", "v", "o", "classifier"],
 ) -> pd.DataFrame:
@@ -98,9 +114,15 @@ def get_ST_layer_weights(
             proj_set[proj] = True
 
     df = pd.DataFrame(index=layer_list, columns=["mlp"])
+    
+    # If only one of the encoder or decoder is to be exported,
+    # it can be exported with single dataframe. 
+    if exportEncoder ^ exportDecoder:
+        block = model.get_encoder().block if exportEncoder else model.get_decoder().block
+    else:
+        raise NotImplementedError("Both encoder and decoder export is not implemented.")
+        
 
-    decoder = model.get_decoder()
-    block = decoder.block
     for block_idx in layer_list:
         for name, module in block[block_idx].layer.named_modules():
             if "SelfAttention" in name.split('.')[-1]:
