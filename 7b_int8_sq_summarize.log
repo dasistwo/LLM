@@ -1,0 +1,42 @@
+[TensorRT-LLM] TensorRT-LLM version: 0.9.0.dev2024031900
+[04/11/2024-14:52:57] [TRT-LLM] [W] hf_model_dir is not specified. Try to infer from model_name, but this may be incorrect.
+[04/11/2024-14:52:58] [TRT-LLM] [I] Load tokenizer takes: 0.4669663906097412 sec
+[TensorRT-LLM][INFO] Engine version 0.9.0.dev2024031900 found in the config file, assuming engine(s) built by new builder API.
+[TensorRT-LLM][WARNING] [json.exception.type_error.302] type must be string, but is null
+[TensorRT-LLM][WARNING] Optional value for parameter kv_cache_quant_algo will not be set.
+[TensorRT-LLM][WARNING] [json.exception.out_of_range.403] key 'num_medusa_heads' not found
+[TensorRT-LLM][WARNING] Optional value for parameter num_medusa_heads will not be set.
+[TensorRT-LLM][WARNING] [json.exception.out_of_range.403] key 'max_draft_len' not found
+[TensorRT-LLM][WARNING] Optional value for parameter max_draft_len will not be set.
+[TensorRT-LLM][INFO] MPI size: 1, rank: 0
+[TensorRT-LLM][INFO] Loaded engine size: 10412 MiB
+[TensorRT-LLM][INFO] [MemUsageChange] Init cuBLAS/cuBLASLt: CPU +0, GPU +8, now: CPU 10675, GPU 10847 (MiB)
+[TensorRT-LLM][INFO] [MemUsageChange] Init cuDNN: CPU +1, GPU +10, now: CPU 10676, GPU 10857 (MiB)
+[TensorRT-LLM][INFO] [MemUsageChange] TensorRT-managed allocation in engine deserialization: CPU +0, GPU +10403, now: CPU 0, GPU 10403 (MiB)
+[TensorRT-LLM][INFO] [MS] Running engine with multi stream info
+[TensorRT-LLM][INFO] [MS] Number of aux streams is 1
+[TensorRT-LLM][INFO] [MS] Number of total worker streams is 2
+[TensorRT-LLM][INFO] [MS] The main stream provided by execute/enqueue calls is the first worker stream
+[TensorRT-LLM][INFO] [MemUsageChange] Init cuBLAS/cuBLASLt: CPU +0, GPU +8, now: CPU 10701, GPU 11973 (MiB)
+[TensorRT-LLM][INFO] [MemUsageChange] Init cuDNN: CPU +1, GPU +8, now: CPU 10702, GPU 11981 (MiB)
+[TensorRT-LLM][INFO] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +0, GPU +0, now: CPU 0, GPU 10403 (MiB)
+[TensorRT-LLM][INFO] Max tokens in paged KV cache: 32384. Allocating 14856224768 bytes.
+[TensorRT-LLM][INFO] Max KV cache pages per sequence: 3
+[04/11/2024-14:53:18] [TRT-LLM] [I] Load engine takes: 14.191426038742065 sec
+[04/11/2024-14:53:20] [TRT-LLM] [I] ---------------------------------------------------------
+[04/11/2024-14:53:20] [TRT-LLM] [I] TensorRT-LLM Generated : 
+[04/11/2024-14:53:20] [TRT-LLM] [I]  Input : ['(CNN)James Best, best known for his portrayal of bumbling sheriff Rosco P. Coltrane on TV\'s "The Dukes of Hazzard," died Monday after a brief illness. He was 88. Best died in hospice in Hickory, North Carolina, of complications from pneumonia, said Steve Latshaw, a longtime friend and Hollywood colleague. Although he\'d been a busy actor for decades in theater and in Hollywood, Best didn\'t become famous until 1979, when "The Dukes of Hazzard\'s" cornpone charms began beaming into millions of American homes almost every Friday night. For seven seasons, Best\'s Rosco P. Coltrane chased the moonshine-running Duke boys back and forth across the back roads of fictitious Hazzard County, Georgia, although his "hot pursuit" usually ended with him crashing his patrol car. Although Rosco was slow-witted and corrupt, Best gave him a childlike enthusiasm that got laughs and made him endearing. His character became known for his distinctive "kew-kew-kew" chuckle and for goofy catchphrases such as "cuff \'em and stuff \'em!" upon making an arrest. Among the most popular shows on TV in the early \'80s, "The Dukes of Hazzard" ran until 1985 and spawned TV movies, an animated series and video games. Several of Best\'s "Hazzard" co-stars paid tribute to the late actor on social media. "I laughed and learned more from Jimmie in one hour than from anyone else in a whole year," co-star John Schneider, who played Bo Duke, said on Twitter. "Give Uncle Jesse my love when you see him dear friend." "Jimmy Best was the most constantly creative person I have ever known," said Ben Jones, who played mechanic Cooter on the show, in a Facebook post. "Every minute of his long life was spent acting, writing, producing, painting, teaching, fishing, or involved in another of his life\'s many passions." Born Jewel Guy on July 26, 1926, in Powderly, Kentucky, Best was orphaned at 3 and adopted by Armen and Essa Best, who renamed him James and raised him in rural Indiana. Best served in the Army during World War II before launching his acting career. In the 1950s and 1960s, he accumulated scores of credits, playing a range of colorful supporting characters in such TV shows as "The Twilight Zone," "Bonanza," "The Andy Griffith Show" and "Gunsmoke." He later appeared in a handful of Burt Reynolds\' movies, including "Hooper" and "The End." But Best will always be best known for his "Hazzard" role, which lives on in reruns. "Jimmie was my teacher, mentor, close friend and collaborator for 26 years," Latshaw said. "I directed two of his feature films, including the recent \'Return of the Killer Shrews,\' a sequel he co-wrote and was quite proud of as he had made the first one more than 50 years earlier." People we\'ve lost in 2015 . CNN\'s Stella Chan contributed to this story.']
+[04/11/2024-14:53:20] [TRT-LLM] [I] 
+ Reference : ['James Best, who played the sheriff on "The Dukes of Hazzard," died Monday at 88 .\n"Hazzard" ran from 1979 to 1985 and was among the most popular shows on TV .']
+[04/11/2024-14:53:20] [TRT-LLM] [I] 
+ Output : [[' suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic suspic']]
+[04/11/2024-14:53:20] [TRT-LLM] [I] ---------------------------------------------------------
+[04/11/2024-14:53:27] [TRT-LLM] [I] TensorRT-LLM (total latency: 7.28775954246521 sec)
+[04/11/2024-14:53:27] [TRT-LLM] [I] TensorRT-LLM (total output tokens: 4000)
+[04/11/2024-14:53:27] [TRT-LLM] [I] TensorRT-LLM (tokens per second: 548.8655294802621)
+[04/11/2024-14:53:27] [TRT-LLM] [I] TensorRT-LLM beam 0 result
+[04/11/2024-14:53:27] [TRT-LLM] [I]   rouge1 : 0.07042253521126761
+[04/11/2024-14:53:27] [TRT-LLM] [I]   rouge2 : 0.0
+[04/11/2024-14:53:27] [TRT-LLM] [I]   rougeL : 0.07042253521126761
+[04/11/2024-14:53:27] [TRT-LLM] [I]   rougeLsum : 0.07042253521126761
+[04/11/2024-14:53:27] [TRT-LLM] [I]   Per-token perplexity: 68.9545551776886

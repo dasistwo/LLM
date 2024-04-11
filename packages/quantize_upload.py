@@ -1,4 +1,4 @@
-from transformers import AutoModelForCausalLM, AutoTokenizer, GPTQConfig, AutoConfig
+from transformers import AutoModelForCausalLM, AutoTokenizer, GPTQConfig, AwqConfig, AutoConfig
 import torch
 import argparse
 from huggingface_hub import login
@@ -25,6 +25,19 @@ parser.add_argument(
     type=bool,
     default=False,
     help="Whether to use desc_act for quantization",
+)
+parser.add_argument(
+    "--push_to_hub",
+    type=bool,
+    default=False,
+    help="Whether to upload the quantized model to the Hub",
+)
+parser.add_argument(
+    "--quant_method",
+    type=str,
+    choices=["GPTQ", "AWQ"],
+    default="GPTQ",
+    help="Choose the quantization method",
 )
 args = parser.parse_args()
 
@@ -65,13 +78,41 @@ True results in better quantization accuracy.
 Some GPTQ clients have had issues with models that use Act Order plus Group Size, but this is generally resolved now.
 """
 
-quantization_config = GPTQConfig(
-    bits=args.bits,
-    model_seqlen=args.model_seqlen,
-    group_size=args.group_size,
-    dataset=args.dataset,
-    desc_act=args.desc_act,
-)
+# Define the quantization config
+if args.quant_method == "AWQ":
+    
+    from awq import AutoAWQForCausalLM
+    model = AutoAWQForCausalLM.from_pretrained(model_id)
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model.quantize(tokenizer=tokenizer, quant_config={
+        "w_bit": args.bits,
+        "zero_point": False,
+        "q_group_size": 128,
+        "version": "GEMM",
+    })
+
+    quantization_config = AwqConfig(
+        bits=args.bits,
+        fuse_max_seq_len=args.model_seqlen,
+        do_fuse=True,
+        group_size=args.group_size,
+        zero_point=False,
+    ).to_dict()
+
+    model.model.config.quantization_config = quantization_config
+    
+    
+elif args.quant_method == "GPTQ":
+    quantization_config = GPTQConfig(
+        bits=args.bits,
+        model_seqlen=args.model_seqlen,
+        group_size=args.group_size,
+        dataset=args.dataset,
+        desc_act=args.desc_act,
+    )
+else:
+    raise ValueError("Invalid quantization method")
+
 
 tokenizer = AutoTokenizer.from_pretrained(model_id)
 quant_model = AutoModelForCausalLM.from_pretrained(
@@ -83,20 +124,27 @@ quant_model = AutoModelForCausalLM.from_pretrained(
 )
 
 # This is the private token. Be careful not to share it with anyone.
-tok = "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"
-login(tok)
+if args.push_to_hub:
+    tok = "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"
+    login(tok)
 
-if quantization_config.desc_act is False:
-    branch = "main"
-else:
-    if quantization_config.group_size == 64:
-        branch = "gptq-4bit-64g-actorder_True"
-    elif quantization_config.group_size == 32:
-        branch = "gptq-4bit-32g-actorder_True"
+    if quantization_config.desc_act is False:
+        branch = "main"
     else:
-        branch = "gptq-4bit-128g-actorder_True"
+        if quantization_config.group_size == 64:
+            branch = "gptq-4bit-64g-actorder_True"
+        elif quantization_config.group_size == 32:
+            branch = "gptq-4bit-32g-actorder_True"
+        else:
+            branch = "gptq-4bit-128g-actorder_True"
 
-my_model_id = model_id.split("/")[-1]
+    new_model_id = model_id.split("/")[-1]
 
-quant_model.push_to_hub(f"{my_model_id}-GPTQ", revision=branch)
-tokenizer.push_to_hub(f"{my_model_id}-GPTQ", revision=branch)
+    quant_model.push_to_hub(f"{new_model_id}-{args.quant_method}", revision=branch)
+    tokenizer.push_to_hub(f"{new_model_id}-{args.quant_method}", revision=branch)
+else:
+    if model_id.endswith("/"):
+        model_id = model_id[:-1]
+    new_model_id = f"{model_id}-{args.quant_method}"
+    quant_model.save_pretrained(f"{new_model_id}-{args.quant_method}")
+    tokenizer.save_pretrained(f"{new_model_id}-{args.quant_method}")
