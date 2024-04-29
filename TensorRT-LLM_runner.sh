@@ -1,4 +1,10 @@
 #!/bin/bash
+
+BATCH_SIZE=8
+MAX_INPUT_LEN=256
+MAX_OUTPUT_LEN=256
+WORLD_SIZE=1
+
 if [[ -f /.dockerenv ]]; then
     TRTLLM_EXAMPLE_PATH=/app/tensorrt_llm/examples
     MODEL_PATH=/mnt/model
@@ -56,6 +62,21 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     echo "Clean option is set"
     shift
     ;;
+  -b | --batch_size )
+    shift; BATCH_SIZE=$1
+    echo "Batch size: $1"
+    shift
+    ;;
+  -i | --max_input_len )
+    shift; MAX_INPUT_LEN=$1
+    echo "Max input length: $1"
+    shift
+    ;;
+  -o | --max_output_len )
+    shift; MAX_OUTPUT_LEN=$1
+    echo "Max output length: $1"
+    shift
+    ;;
   -h | --help )
     echo "Usage: [option] [argument]"
     echo "  -p, --precision  <arg>  Specify the precision of the model"
@@ -64,6 +85,9 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     echo "  -a, --all               Run all models"
     echo "  -h, --help              Display help"
     echo "  -c, --clean             Clean the existing model"
+    echo "  -b, --batch_size <arg>  Specify the batch size"
+    echo "  -i, --max_input_len <arg>  Specify the maximum input length"
+    echo "  -o, --max_output_len <arg>  Specify the maximum output length"
     exit
     ;;
   * )
@@ -150,20 +174,20 @@ for PRECISION in "${prec[@]}"; do
     fi
   fi
 
-  echo "------------------------------------"
-  echo "| Constructing TensorRT-LLM engine |"
-  echo "------------------------------------"
-
   if [[ $? -ne 0 ]]; then
     echo "Conversion failed"
     exit
   fi
 
+  echo "------------------------------------"
+  echo "| Constructing TensorRT-LLM engine |"
+  echo "------------------------------------"
+
   if [[ ! -d "${ENGINE_PATH}" ]]; then
     mkdir -p ${ENGINE_PATH}
     trtllm-build --checkpoint_dir ${UNIFIED_CKPT_PATH} --gemm_plugin ${PLUGIN} \
-    --gpt_attention_plugin ${PLUGIN} --lookup_plugin ${PLUGIN} --max_batch_size 8 \
-    --max_input_len 256 ${TYPED} --max_output_len 256 --log_level verbose --profiling_verbosity detailed \
+    --gpt_attention_plugin ${PLUGIN} --lookup_plugin ${PLUGIN} --max_batch_size ${BATCH_SIZE} \
+    --max_input_len ${MAX_INPUT_LEN} ${TYPED} --max_output_len ${MAX_OUTPUT_LEN} --log_level verbose --profiling_verbosity detailed \
     --gather_all_token_logits --enable_debug_output --enable_xqa enable --context_fmha enable \
     --output_dir ${ENGINE_PATH} > ${ENGINE_PATH}/build.log
   fi
@@ -178,7 +202,7 @@ for PRECISION in "${prec[@]}"; do
   echo "------------------------------------"
 
   python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
-  --max_input_length 256 --batch_size 8 --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} \
+  --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} \
   --data_type ${PLUGIN} --debug_mode > ${ENGINE_PATH}/summarize.log
 
 done
