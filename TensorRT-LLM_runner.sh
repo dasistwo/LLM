@@ -138,10 +138,10 @@ for PRECISION in "${prec[@]}"; do
   echo "Model: ${MODEL_NAME} Size: ${MODEL_SIZE} Precision: ${PRECISION}"
   if [[ -n "$CLEAN_OPTION" ]]; then
     echo "------------------------------------"
-    echo "|    Removing model and engine     |"
+    echo "|         Removing engine          |"
     echo "------------------------------------"
-    rm -rf ${UNIFIED_CKPT_PATH}
-    rm -rf ${ENGINE_PATH}
+    rm ${ENGINE_PATH}/config.json
+    rm ${ENGINE_PATH}/*.engine
   fi
 
   if [[ ! -d "${UNIFIED_CKPT_PATH}" ]]; then
@@ -185,6 +185,8 @@ for PRECISION in "${prec[@]}"; do
 
   if [[ ! -d "${ENGINE_PATH}" ]]; then
     mkdir -p ${ENGINE_PATH}
+  fi
+  if [[ -z $(find "${ENGINE_PATH}" -maxdepth 1 -name "*.engine") ]]; then
     trtllm-build --checkpoint_dir ${UNIFIED_CKPT_PATH} --gemm_plugin ${PLUGIN} \
     --gpt_attention_plugin ${PLUGIN} --lookup_plugin ${PLUGIN} --max_batch_size ${BATCH_SIZE} \
     --max_input_len ${MAX_INPUT_LEN} ${TYPED} --max_output_len ${MAX_OUTPUT_LEN} --log_level verbose --profiling_verbosity detailed \
@@ -203,6 +205,6 @@ for PRECISION in "${prec[@]}"; do
 
   python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
   --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} \
-  --data_type ${PLUGIN} --debug_mode > ${ENGINE_PATH}/summarize.log
+  --data_type ${PLUGIN} --debug_mode > ${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/summarize_batch${BATCH_SIZE}.log
 
 done
