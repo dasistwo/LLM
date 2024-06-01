@@ -15,19 +15,19 @@ fi
 
 function gemma_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/gemma/convert_checkpoint.py
-  python3 ${convert_py} --ckpt-type torch --model-dir $1 --dtype $3 --world-size 1 --output-model-dir $2
+  python3 ${convert_py} --ckpt-type torch --model-dir $1 --dtype $3 --world-size ${WORLD_SIZE} --output-model-dir $2
   return $?
 }
 
 function llama_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/llama/convert_checkpoint.py
-  python3 ${convert_py} --meta_ckpt_dir $1 --dtype $3 --tp_size 1 --output_dir $2
+  python3 ${convert_py} --meta_ckpt_dir $1 --dtype $3 --tp_size ${WORLD_SIZE} --output_dir $2
   return $?
 }
 
 function quantize_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/quantization/quantize.py
-  python3 ${convert_py} --model_dir $1 --dtype bfloat16 --qformat $4 --output_dir $2 --tp_size 1
+  python3 ${convert_py} --model_dir $1 --dtype bfloat16 --qformat $4 --output_dir $2 --tp_size ${WORLD_SIZE}
   return $?
 }
 
@@ -77,6 +77,12 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     echo "Max output length: $1"
     shift
     ;;
+  -w | --world_size | -n | --num_gpus)
+    shift; WORLD_SIZE=$1
+    echo "World size: $1"
+
+    shift
+    ;;
   -h | --help )
     echo "Usage: [option] [argument]"
     echo "  -p, --precision  <arg>  Specify the precision of the model"
@@ -88,6 +94,7 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     echo "  -b, --batch_size <arg>  Specify the batch size"
     echo "  -i, --max_input_len <arg>  Specify the maximum input length"
     echo "  -o, --max_output_len <arg>  Specify the maximum output length"
+    echo "  -w, --world_size <arg>  Specify the number of GPUs"
     exit
     ;;
   * )
@@ -115,13 +122,13 @@ fi
 
 for PRECISION in "${prec[@]}"; do
   CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
-  UNIFIED_CKPT_PATH="${MODEL_PATH}/trt_llm/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp1"
+  UNIFIED_CKPT_PATH="${MODEL_PATH}/trt_llm/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
   HF_MODEL_PATH="${MODEL_PATH}/huggingface/${MODEL_NAME}/${MODEL_SIZE}"
   VOCAB_FILE_PATH="${HF_MODEL_PATH}/tokenizer.model"
   if [[ -f /.dockerenv ]]; then
-      ENGINE_PATH="${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/engine/${MODEL_SIZE}/${PRECISION}/tp1"
+      ENGINE_PATH="${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/engine/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
   else
-      ENGINE_PATH="${MODEL_PATH}/trt_llm_engine/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp1"
+      ENGINE_PATH="${MODEL_PATH}/trt_llm_engine/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
   fi
 
   if [[ ${PRECISION:5} == "awq" || ${PRECISION:5} == "sq" ]]; then
@@ -144,7 +151,12 @@ for PRECISION in "${prec[@]}"; do
     rm ${ENGINE_PATH}/*.engine
   fi
 
-  if [[ ! -d "${UNIFIED_CKPT_PATH}" ]]; then
+  if [[ $? -ne 0 ]]; then
+    echo "Removing engine failed"
+    exit
+  fi
+  
+	if [[ ! -d "${UNIFIED_CKPT_PATH}" ]]; then
     echo "------------------------------------"
     echo "|      Converting checkpoints      |"
     echo "------------------------------------"
@@ -204,7 +216,7 @@ for PRECISION in "${prec[@]}"; do
   echo "------------------------------------"
 
   python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
-  --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} \
+  --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.5\
   --data_type ${PLUGIN} --debug_mode > ${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/summarize_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
 
 done

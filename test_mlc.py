@@ -1,10 +1,11 @@
 #!python3
-from mlc_llm import ChatModule, ChatConfig
-from mlc_llm.callback import StreamToStdout
+#from mlc_llm import ChatModule, ChatConfig
+from mlc_llm import AsyncMLCEngine
 from transformers import AutoTokenizer
 from time import perf_counter
 import pandas as pd
 
+max_batch_size = 8
 questions = [
         # Coding questions
         "Implement a Python function to compute the Fibonacci numbers.",
@@ -78,17 +79,19 @@ questions = [
         "Kannst du die wichtigsten Eigenschaften und Funktionen des NMDA-Rezeptors beschreiben?",
 ]
 
-npyinput = "/scale/cal/home/jychoi/TensorRT-LLM/examples/encode256.npy"
-
 model_dir = "/data/storage1/model/mlc/gemma/7b/int4"
 model_lib_dir = "/data/storage1/model/mlc/gemma/7b/int4/cuda.so"
 
 tokenizer = AutoTokenizer.from_pretrained("google/gemma-1.1-7b-it")
 
-cfg = ChatConfig(max_gen_len=256)
-cm = ChatModule(model=model_dir, \
-        model_lib_path=model_lib_dir, \
-        chat_config=cfg)
+#cfg = ChatConfig(max_gen_len=256)
+#cm = ChatModule(model=model_dir, \
+#        model_lib_path=model_lib_dir, \
+#        chat_config=cfg)
+engine = AsyncMLCEngine(model_dir,
+                        model_lib_path=model_lib_dir,
+                        mode="server",
+                        max_batch_size=max_batch_size)
 
 def tok_count(prompt:str):
     inputs = tokenizer(prompt)
@@ -96,7 +99,12 @@ def tok_count(prompt:str):
 
 def predict(prompt:str):
     start_time = perf_counter()
-    output = cm.generate(prompt=prompt)
+    # output = cm.generate(prompt=prompt)
+    output = engine.chat.completions.create(
+        messages=[{"role": "user", "content": prompt}],
+        model=model_dir,
+        stream=False,
+    )
     request_time = perf_counter() - start_time
 
     return {'tok_count': tok_count(output),
@@ -115,3 +123,4 @@ if __name__ == '__main__':
 
     df = pd.DataFrame(responses)
     df.to_csv('bench-mlc.csv', index=False)
+    engine.terminate()
