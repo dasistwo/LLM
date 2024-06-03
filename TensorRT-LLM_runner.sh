@@ -152,8 +152,7 @@ for PRECISION in "${prec[@]}"; do
   fi
 
   if [[ $? -ne 0 ]]; then
-    echo "Removing engine failed"
-    exit
+    echo "No files to remove."
   fi
   
 	if [[ ! -d "${UNIFIED_CKPT_PATH}" ]]; then
