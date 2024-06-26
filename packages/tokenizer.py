@@ -41,10 +41,34 @@ if args.text:
         else:
             output[i, :] = encoded
 else:
+    # use the fineweb BT-10 dataset
+    import datasets
+    import os
+    
+    dataset_path = "/data/storage1/model/data/fineweb/sample/10BT"
+    if not os.path.exists(dataset_path):
+        # Check whether if to download the dataset
+        download = input("Download the dataset? (y/n): ")
+        if download.lower() == "y":
+            ds = datasets.load_dataset("HuggingFaceFW/fineweb",
+                                  name="sample-10BT",
+                                  split="train",
+                                  cache_dir=dataset_path)
+        else:
+            raise ValueError("Dataset not found")
+    else:
+        ds = datasets.load_dataset(dataset_path,
+                                   split="train")
+    
+    ds = ds.filter(lambda x: x['language_score'] > 0.9)
+    ds = ds.filter(lambda x: x['token_count'] > args.length * 2) # filtering with safety margin
+    ds = ds.shuffle()
+    
+    # extract the ds_npy and tokenize
     for i in range(args.batch_size):
-        text = input("Enter the text to tokenize: ")
-        output[i, :] = tokenizer.encode(text, max_length=args.length, truncation=True, padding="max_length")
-        if output[i].shape[0] < args.length:
-            raise ValueError(f"Tokenized text is too short: {output[i].shape[0]}")
+        encoded = tokenizer.encode(
+            ds['text'][i], max_length=args.length, truncation=True
+        )
+        output[i, :] = encoded
 
-np.save(f"encoded{args.batch_size}x{args.length}.npy", output)
+np.save(f"encode{args.batch_size}x{args.length}.npy", output)

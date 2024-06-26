@@ -11,6 +11,7 @@ if [[ -f /.dockerenv ]]; then
 else
     TRTLLM_EXAMPLE_PATH=/data/storage1/jychoi/TensorRT-LLM/examples
     MODEL_PATH=/data/storage1/model
+    PROFILE_OUTPUT_PATH=/data/storage1/jychoi
 fi
 
 function gemma_convert(){
@@ -83,6 +84,17 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
 
     shift
     ;;
+  -nsys )
+    shift; NSYS_OPTION=1
+    echo "Profile with NSYS profiler."
+    shift
+    ;;
+
+  -ncu ) 
+    shift; NCU_OPTION=$1
+    echo "Profile with NCU profiler, Kernel name: $1"
+    shift
+    ;;
   -h | --help )
     echo "Usage: [option] [argument]"
     echo "  -p, --precision  <arg>  Specify the precision of the model"
@@ -95,6 +107,8 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     echo "  -i, --max_input_len <arg>  Specify the maximum input length"
     echo "  -o, --max_output_len <arg>  Specify the maximum output length"
     echo "  -w, --world_size <arg>  Specify the number of GPUs"
+    echo "  -nsys            <arg>  Specify the nsys profile option"
+    echo "  -ncu             <arg>  Specify the ncu profile option"
     exit
     ;;
   * )
@@ -210,12 +224,34 @@ for PRECISION in "${prec[@]}"; do
     exit
   fi
 
-  echo "------------------------------------"
-  echo "|  Evaluating TensorRT-LLM engine  |"
-  echo "------------------------------------"
+  if [[ -n "$NSYS_OPTION" ]]; then
+    echo "------------------------------------"
+    echo "|  Profiling with NSYS profiler    |"
+    echo "------------------------------------"
+    nsys profile -t cuda,nvtx,cublas-verbose,cudnn,cusparse-verbose --gpu-metrics-device all -b fp \
+    --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE} -f true \
+    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
+    --input_file /data/storage1/jychoi/encode16x256.npy --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.4
+  elif [[ -n "$NCU_OPTION" ]]; then
+    echo "------------------------------------"
+    echo "|  Profiling with NCU profiler     |"
+    echo "------------------------------------"
+    # Check the NCU_OPTION to user, enter to proceed
+    echo "The kernel name is ${NCU_OPTION}"
+    
+    read -p "Press enter to continue"
 
-  python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
-  --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.5\
-  --data_type ${PLUGIN} --debug_mode > ${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/summarize_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
+    ncu --set full --nvtx -k regex:${NCU_OPTION} --launch-count 9 --target-processes all -f \
+    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_MLP_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE} \
+    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
+    --input_file /data/storage1/jychoi/encode16x256.npy --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.4
+  else 
+    echo "------------------------------------"
+    echo "|  Evaluating TensorRT-LLM engine  |"
+    echo "------------------------------------"
+    python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
+    --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 --eval_ppl --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.3 \
+    --data_type ${PLUGIN} --debug_mode > ${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/summarize_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
+  fi
 
 done
