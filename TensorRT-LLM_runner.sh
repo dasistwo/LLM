@@ -91,8 +91,8 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     ;;
 
   -ncu ) 
-    shift; NCU_OPTION=$1
-    echo "Profile with NCU profiler, Kernel name: $1"
+    shift; NCU_OPTION=1
+    echo "Profile with NCU profiler."
     shift
     ;;
   -h | --help )
@@ -224,6 +224,12 @@ for PRECISION in "${prec[@]}"; do
     exit
   fi
 
+  if [[ ! -f "/data/storage1/jychoi/encode${BATCH_SIZE}x${MAX_INPUT_LEN}.npy" ]]; then
+    echo "------------------------------------"
+    echo "|Generating input data... chill out|"
+    echo "------------------------------------"
+  fi
+
   if [[ -n "$NSYS_OPTION" ]]; then
     echo "------------------------------------"
     echo "|  Profiling with NSYS profiler    |"
@@ -236,13 +242,18 @@ for PRECISION in "${prec[@]}"; do
     echo "------------------------------------"
     echo "|  Profiling with NCU profiler     |"
     echo "------------------------------------"
-    # Check the NCU_OPTION to user, enter to proceed
-    echo "The kernel name is ${NCU_OPTION}"
     
-    read -p "Press enter to continue"
+  	echo -e "\nPlease check the NSYS report before enter the kernel name and launch count."
+		
+		read -p "Enter the kernel name: " NCU_KERNEL
+		read -p "Enter the skipping count of the kernel launch: " NCU_SKIP_COUNT
+		read -p "Enter the launch count: " NCU_LAUNCH_COUNT
 
-    ncu --set full --nvtx -k regex:${NCU_OPTION} --launch-count 9 --target-processes all -f \
-    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_MLP_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE} \
+		echo "The kernel name is ${NCU_KERNEL}"
+    echo "The launch count is ${NCU_LAUNCH_COUNT}"
+
+    ncu --set full --nvtx -k ${NCU_KERNEL} -s ${NCU_SKIP_COUNT} -c ${NCU_LAUNCH_COUNT} --target-processes all -f \
+    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_MLP_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_sum_xdq \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file /data/storage1/jychoi/encode16x256.npy --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.4
   else 

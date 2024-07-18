@@ -27,6 +27,26 @@ qlinear_types = {
     qlinear.qlinear_triton.QuantLinear,
 }
 
+def get_blocks(model):
+    if "llama" in str(model.__class__).lower():
+        layers = model.model.layers
+    elif "gemma" in str(model.__class__).lower():
+        layers = model.model.layers
+    elif "opt" in str(model.__class__).lower():
+        layers = model.model.decoder.layers
+    elif "bloom" in str(model.__class__).lower():
+        layers = model.transformer.h
+    elif "mpt" in str(model.__class__).lower():
+        layers = model.transformer.blocks
+    elif "falcon" in str(model.__class__).lower():
+        layers = model.transformer.h
+    elif "bigcode" in str(model.__class__).lower():
+        layers = model.transformer.h
+    elif "neox" in str(model.__class__).lower():
+        layers = model.gpt_neox.layers
+    else:
+        raise NotImplementedError(type(model))
+    return layers
 
 def print_layer_size(model: torch.nn.Module):
     # Print the size of the projection layers
@@ -46,7 +66,6 @@ def print_layer_size(model: torch.nn.Module):
         else:
             print(f"{attr}: {w.weight.nbytes} bytes")
     return proj_set
-
 
 def get_layer_weights(
     model: torch.nn.Module,
