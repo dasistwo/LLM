@@ -163,6 +163,10 @@ else
     RUNFILE_INPUT="/data/storage1/jychoi/encode${BATCH_SIZE}x${MAX_INPUT_LEN}.npy"
 fi
 
+CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
+HF_MODEL_PATH="${MODEL_PATH}/huggingface/${MODEL_NAME}/${MODEL_SIZE}"
+VOCAB_FILE_PATH="${HF_MODEL_PATH}/tokenizer.model"
+
 function gemma_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/gemma/convert_checkpoint.py
   python3 ${convert_py} --ckpt-type torch --model-dir $1 --dtype $3 --world-size ${WORLD_SIZE} --output-model-dir $2
@@ -170,7 +174,6 @@ function gemma_convert(){
 }
 
 function llama_convert(){
-	
   local convert_py=${TRTLLM_EXAMPLE_PATH}/llama/convert_checkpoint.py
   python3 ${convert_py} --meta_ckpt_dir $1 --dtype $3 --tp_size ${WORLD_SIZE} --output_dir $2
   return $?
@@ -183,21 +186,29 @@ function quantize_convert(){
 }
 
 for PRECISION in "${prec[@]}"; do
-  CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
   UNIFIED_CKPT_PATH="${MODEL_PATH}/trt_llm/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
-  HF_MODEL_PATH="${MODEL_PATH}/huggingface/${MODEL_NAME}/${MODEL_SIZE}"
-  VOCAB_FILE_PATH="${HF_MODEL_PATH}/tokenizer.model"
   if [[ -f /.dockerenv ]]; then
       ENGINE_PATH="${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/engine/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
   else
       ENGINE_PATH="${MODEL_PATH}/trt_llm_engine/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
   fi
 
-  if [[ -f ${ENGINE_PATH}/config.json ]]; then
-    NUM_HIDDEN_LAYERS=$(jq -r '.num_hidden_layers' ${ENGINE_PATH}/config.json)
+  if [[ ${PRECISION:5} == "awq" || ${PRECISION:5} == "sq" ]]; then
+    PLUGIN="bfloat16"
+    TYPED="--strongly_type"
+  elif [[ ${PRECISION:5} == "wo" ]]; then
+    PLUGIN="bfloat16"
+    TYPED=""
+  else
+    PLUGIN="float16"
+    TYPED=""
+  fi
+
+  if [[ -f ${HF_MODEL_PATH}/config.json ]]; then
+    NUM_HIDDEN_LAYERS=$(jq -r '.num_hidden_layers' ${HF_MODEL_PATH}/config.json)
     echo "Number of hidden layers: ${NUM_HIDDEN_LAYERS}"
   else
-    echo "config.json not found"
+    echo "${HF_MODEL_PATH}/config.json not found"
     exit 1
   fi
 
