@@ -12,13 +12,16 @@ parser.add_argument(
     "--model_id",
     type=str,
     help="Model ID to use for tokenization",
-    default="/data/storage1/model/huggingface/gemma/7b",
+    default="/data/storage1/model/huggingface/gemma/1-7B",
 )
 parser.add_argument(
     "--length", type=int, default=256, help="Minimum length of the tokenized text"
 )
 parser.add_argument(
     "--batch_size", type=int, default=1, help="Batch size for tokenization"
+)
+parser.add_argument(
+    "--output_path", type=str, default=".", help="Output path for the tokenized text"
 )
 args = parser.parse_args()
 
@@ -44,6 +47,7 @@ else:
     # use the fineweb BT-10 dataset
     import datasets
     import os
+    from tqdm import tqdm
     
     dataset_path = "/data/storage1/model/data/fineweb/sample/10BT"
     if not os.path.exists(dataset_path):
@@ -65,7 +69,7 @@ else:
     ds = ds.shuffle()
     
     # extract the ds_npy and tokenize
-    for i in range(args.batch_size):
+    for i in tqdm(range(args.batch_size)):
         encoded = tokenizer.encode(
             ds['text'][i], max_length=args.length, truncation=True
         )
