@@ -2,3 +2,5 @@
 .virtual_documents
 __pycache__
 plots
+*.safetensors
+models

@@ -157,14 +157,14 @@ if [[ -f /.dockerenv ]]; then
     RUNFILE_INPUT="/app/encode${BATCH_SIZE}x${MAX_INPUT_LEN}.npy"
 
 else
-    TRTLLM_EXAMPLE_PATH=/data/storage1/jychoi/TensorRT-LLM/examples
-    MODEL_PATH=/data/storage1/model
-    PROFILE_OUTPUT_PATH=/data/storage1/jychoi
-    RUNFILE_INPUT="/data/storage1/jychoi/encode${BATCH_SIZE}x${MAX_INPUT_LEN}.npy"
+    TRTLLM_EXAMPLE_PATH=/home/jychoi/TensorRT-LLM/examples
+    MODEL_PATH=/home/jychoi/model
+    PROFILE_OUTPUT_PATH=/home/jychoi
+    RUNFILE_INPUT="/home/jychoi/encode${BATCH_SIZE}x${MAX_INPUT_LEN}.npy"
 fi
 
 CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
-HF_MODEL_PATH="${MODEL_PATH}/huggingface/${MODEL_NAME}/${MODEL_SIZE}"
+HF_MODEL_PATH="${MODEL_PATH}/hf/${MODEL_NAME}/${MODEL_SIZE}"
 VOCAB_FILE_PATH="${HF_MODEL_PATH}/tokenizer.model"
 
 function gemma_convert(){
@@ -280,6 +280,68 @@ for PRECISION in "${prec[@]}"; do
     exit
   fi
 
+#  function calculate_gpu_mem_usage(){
+#    local config_json=${ENGINE_PATH}/config.json
+#    
+#    local memory_sizes=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits)
+#    # Initialize the sum variable
+#    local total_memory=0
+#
+#    # Iterate over each memory size and sum them
+#    while IFS= read -r memory; do
+#        total_memory=$((total_memory + memory))
+#    done <<< "$memory_sizes"
+#
+#    # divide it with world_size
+#    local memory_per_gpu=$((total_memory / WORLD_SIZE))
+#
+#    ####################################################
+#
+#    # Extract required parameters using jq
+#    local vocab_size=$(jq '.pretrained_config.vocab_size' $config_json)
+#    local hidden_size=$(jq '.pretrained_config.hidden_size' $config_json)
+#    local num_hidden_layers=$(jq '.pretrained_config.num_hidden_layers' $config_json)
+#    local num_key_value_heads=$(jq '.pretrained_config.num_key_value_heads' $config_json)
+#    local head_size=$(jq '.pretrained_config.head_size' $config_json)
+#    local intermediate_size=$(jq '.pretrained_config.intermediate_size' $config_json)
+#
+#    # Extract quantization parameters
+#    local quant_algo=$(jq -r '.pretrained_config.quantization.quant_algo' $config_json)
+#    local group_size=$(jq '.pretrained_config.quantization.group_size' $config_json)
+#    local has_zero_point=$(jq '.pretrained_config.quantization.has_zero_point' $config_json)
+#
+#    # Extract weight bits from quant_algo
+#    local weight_bits=$(echo $quant_algo | sed -n 's/W\([0-9]*\)A.*/\1/p')
+#
+#    # Calculate sizes
+#    local embedding_size=$((vocab_size * hidden_size * 2))  # Embedding uses full precision
+#
+#    if [[ has_zero_point == "true" ]]; then
+#      group_size=$((group_size * 2))
+#
+#    local attention_size=$((4 * hidden_size * num_key_value_heads * head_size * weight_bits / 8))
+#    local attention_scale=$((attention_size / group_size * 2))
+#    local attention_total=$((attention_size + attention_scale))
+#
+#    local ffn_size=$((2 * hidden_size * intermediate_size * weight_bits / 8))
+#    local ffn_scale=$((ffn_size / group_size * 2))
+#    local ffn_total=$((ffn_size + $ffn_scale))
+#
+#    local layer_norm_size=$((hidden_size * 2))  # Layer norm uses full precision
+#
+#    local layer_total=$((attention_total + ffn_total + layer_norm_size))
+#    local all_layers_total=$((layer_total * num_hidden_layers))
+#
+#    local lm_head_size=$((hidden_size * vocab_size * 2))  # LM head uses full precision
+#
+#    local total_weight_size=$((embedding_size + all_layers_total + lm_head_size))
+#
+#    # Convert to megabytes
+#    total_weight_size_mb=$(echo "scale=2; $total_size / (1024^2)" | bc)
+#
+#		return 0
+#  }
+
   if [[ ! -f ${RUNFILE_INPUT} ]]; then
     echo "------------------------------------"
     echo "|Generating input data... chill out|"
@@ -310,7 +372,7 @@ for PRECISION in "${prec[@]}"; do
       SUFFIX="sum"
     fi
     ncu --set full --nvtx -k ${NCU_KERNEL} -s ${NCU_SKIP_COUNT} -c ${NCU_LAUNCH_COUNT} --target-processes all -f \
-    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_MLP_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX} \
+    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX} \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} --vocab_file ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction 0.9 --kv_cache_enable_block_reuse 
@@ -323,7 +385,7 @@ for PRECISION in "${prec[@]}"; do
 		fi
 
     python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
-    --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.1 \
+    --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} --vocab_file ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.9 \
     --data_type ${PLUGIN} --debug_mode > ${TRTLLM_EXAMPLE_PATH}/${MODEL_NAME}/summarize_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
   fi
 
