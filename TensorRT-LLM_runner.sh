@@ -203,6 +203,8 @@ function quantize_convert(){
   return $?
 }
 
+KV_FRACTION=0.99
+
 function calculate_gpu_mem_usage(){
   ####################################################
   ####        Calculate free memory of GPU        ####
@@ -211,6 +213,7 @@ function calculate_gpu_mem_usage(){
   local config_json=${ENGINE_PATH}/config.json
   
   local memory_sizes=$(nvidia-smi --query-gpu=memory.total --format=csv,noheader,nounits)
+  local num_gpus=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
   # Initialize the sum variable
   local total_memory=0
 
@@ -220,8 +223,8 @@ function calculate_gpu_mem_usage(){
   done <<< "$memory_sizes"
 
   # divide it with world_size
-  local memory_per_gpu=$((total_memory / WORLD_SIZE))
-  echo -e "Memory per GPU: ${memory_per_gpu}\n"
+  local memory_per_gpu=$((total_memory * WORLD_SIZE / num_gpus))
+  echo "Memory per GPU: ${memory_per_gpu} MiB"
 
   ####################################################
   ####   Calculate the weight size of the model   ####
@@ -268,8 +271,8 @@ function calculate_gpu_mem_usage(){
   local lm_head_size=$((hidden_size * vocab_size * 2))  # LM head uses full precision
 
   local total_weight_size=$((embedding_size + all_layers_total + lm_head_size))
-  echo "Total weight size: $(echo "scale=2; ${total_weight_size} / (1024 * 1024)" | bc) MiB"
-  printf "\n"
+  total_weight_size_mib=$(echo "scale=2; ${total_weight_size} / (1024 * 1024)" | bc)
+  echo "Total weight size: ${total_weight_size_mib} MiB"
 
   ####################################################
   ####    Calculate KV cache size of the model    ####
@@ -279,7 +282,8 @@ function calculate_gpu_mem_usage(){
 
   # Assume the maximum kv_cache_size, which doesn't use paged attention and kv cache quantization.
   local kv_cache_size=$((BATCH_SIZE * seq_len * num_hidden_layers * num_key_value_heads * head_size * 2))
-  local kv_cache_size_mib=$(echo "scale=2; ${kv_cache_size} / (1024 * 1024)" | bc)
+  kv_cache_size_mib=$(echo "scale=2; ${kv_cache_size} / (1024 * 1024)" | bc)
+  echo "KV Cache size: ${kv_cache_size_mib} MiB"
 
   ####################################################
   ####      Calculate the activation of TRT       ####
@@ -290,17 +294,34 @@ function calculate_gpu_mem_usage(){
   # mlp activation out (assume not fused in plugin mode) = 1st FC out
 
   local activation_size=$(((BATCH_SIZE * seq_len * hidden_size * 4 + BATCH_SIZE * seq_len * intermediate_size * 2) * 2))
-  local activation_size_mib=$(echo "scale=2; ${activation_size} / (1024 * 1024)" | bc)
+  activation_size_mib=$(echo "scale=2; ${activation_size} / (1024 * 1024)" | bc)
+  echo "Activation size: ${activation_size_mib} MiB"
 
   ####################################################
   ####       Calculate the logit tensor size      ####
   ####################################################
   local logit_size=$((BATCH_SIZE * seq_len * vocab_size * 8))
-  local logit_size_mib=$(echo "scale=2; ${logit_size} / (1024 * 1024)" | bc)
+  logit_size_mib=$(echo "scale=2; ${logit_size} / (1024 * 1024)" | bc)
+  echo "Logit size: ${logit_size_mib} MiB"
 
-  printf "KV cache size: %.2f MiB\n" "$kv_cache_size_mib"
-  printf "Activation size: %.2f MiB\n" "$activation_size_mib"
-  printf "Logit size: %.2f MiB\n" "$logit_size_mib"
+  result=$(echo "${total_weight_size_mib} + ${kv_cache_size_mib} + ${activation_size_mib}" | bc)
+  if [[ ${PPL_OPTION} != "" ]]; then
+    result=$(echo "${result} + ${logit_size_mib}" | bc)
+  fi
+
+  if (( $(echo "${result} < ${memory_per_gpu}" | bc -l) )); then
+    KV_FRACTION=0.99
+  else
+    if [[ ${PPL_OPTION} != "" ]]; then
+      KV_FRACTION=$(echo "scale=2; (${memory_per_gpu} - ${total_weight_size_mib} - ${activation_size_mib} - ${logit_size_mib}) / ${kv_cache_size_mib}" | bc -l)
+    else
+      KV_FRACTION=$(echo "scale=2; (${memory_per_gpu} - ${total_weight_size_mib} - ${activation_size_mib}) / ${kv_cache_size_mib}" | bc -l)
+    fi
+    KV_FRACTION=$(printf "0.%02d" ${KV_FRACTION##*.})
+  fi
+
+  echo "KV Cache free memory fraction: ${KV_FRACTION}"
+
 }
 
 
@@ -403,13 +424,15 @@ for PRECISION in "${prec[@]}"; do
 
   if [[ ! -f ${RUNFILE_INPUT} ]]; then
     echo "------------------------------------"
-    echo "|Generating input data... chill out|"
+    echo "|     Generating input data...     |"
     echo "------------------------------------"
+    SCRIPT_PATH=$(dirname "$0")
+    RUNFILE_PATH=$(dirname ${RUNFILE_INPUT})
+    python3 ${SCRIPT_PATH}/packages/tokenizer.py --model_id ${HF_MODEL_PATH} --length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --output_path ${RUNFILE_PATH}
   fi
 
-  echo " calculating gpu memory usage "
-  MEM_FRAC=$(calculate_gpu_mem_usage)
-  echo ${MEM_FRAC}
+  echo "Calculating gpu memory usage..."
+  calculate_gpu_mem_usage
   echo "------------------------------------"
 
   if [[ -n "$NSYS_OPTION" ]]; then
@@ -420,7 +443,7 @@ for PRECISION in "${prec[@]}"; do
     --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE} -f true \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
-    --kv_cache_free_gpu_memory_fraction 0.9 --kv_cache_enable_block_reuse 
+    --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
   elif [[ -n "$NCU_OPTION" ]]; then
     echo "------------------------------------"
     echo "|  Profiling with NCU profiler     |"
@@ -439,7 +462,7 @@ for PRECISION in "${prec[@]}"; do
     -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX} \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
-    --kv_cache_free_gpu_memory_fraction 0.9 --kv_cache_enable_block_reuse 
+    --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
 	else 
     echo "------------------------------------"
     echo "|  Evaluating TensorRT-LLM engine  |"
@@ -453,7 +476,7 @@ for PRECISION in "${prec[@]}"; do
     fi
 
     python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
-    --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction 0.3 \
+    --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
     --data_type ${PLUGIN} --debug_mode > ${PROFILE_OUTPUT_PATH}/ppl_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
   fi
 
