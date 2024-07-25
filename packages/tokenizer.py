@@ -12,7 +12,7 @@ parser.add_argument(
     "--model_id",
     type=str,
     help="Model ID to use for tokenization",
-    default="/data/storage1/model/huggingface/gemma/1-7B",
+    default="/data/storage1/model/hf/gemma/1-7B",
 )
 parser.add_argument(
     "--length", type=int, default=256, help="Minimum length of the tokenized text"
@@ -21,7 +21,7 @@ parser.add_argument(
     "--batch_size", type=int, default=1, help="Batch size for tokenization"
 )
 parser.add_argument(
-    "--output_path", type=str, default=".", help="Output path for the tokenized text"
+    "--output_path", type=str, default="/home/jychoi/encode", help="Output path for the tokenized text"
 )
 args = parser.parse_args()
 
@@ -75,4 +75,9 @@ else:
         )
         output[i, :] = encoded
 
-np.save(f"encode{args.batch_size}x{args.length}.npy", output)
+model_id_prefix = args.model_id.split("/")[-2:]
+if model_id_prefix[-1] == model_id_prefix[-1].split("-")[0]:
+    model_id_prefix = model_id_prefix[:-1]
+model_id_prefix = "".join(model_id_prefix)
+filename = f"{model_id_prefix}_encode{args.batch_size}x{args.length}.npy"
+np.save(filename, output)
