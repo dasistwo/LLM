@@ -165,12 +165,31 @@ else
     RUNFILE_INPUT="/home/jychoi/encode/${MODEL_NAME}${MODEL_VER}_${BATCH_SIZE}x${MAX_INPUT_LEN}.npy"
 fi
 
+if [[ ${PPL_OPTION} != "" ]]; then
+  if [[ ${BATCH_SIZE} != 1 || ${MAX_OUTPUT_LEN} != 1 ]]; then
+    echo "It is recommended to set output sequence length and batch size to 1 to calculate perplexity."
+    while true; do
+      read -p "Do you want to continue? (y/n): " yn
+      case $yn in
+        [Yy]* )
+          echo "Continue"; break;;
+        [Nn]* )
+          exit ;;
+        * )
+          echo "Please answer yes or no." ;;
+      esac
+    done
+    BATCH_SIZE=1
+    MAX_OUTPUT_LEN=1
+  fi
+fi
+
 CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
 HF_MODEL_PATH="${MODEL_PATH}/hf/${MODEL_NAME}/${MODEL_SIZE}"
 
 # Maybe tokenizer.json doesn't work for all models
 
-# if [[ -f "${HF_MODEL_PATH}/tokenizer.json" ]]; then
+#if [[ -f "${HF_MODEL_PATH}/tokenizer.json" ]]; then
 #    VOCAB_FILE_OPTION="--vocab_file"
 #    VOCAB_FILE_PATH="${HF_MODEL_PATH}/tokenizer.json"
 #else
@@ -300,7 +319,10 @@ function calculate_gpu_mem_usage(){
   ####################################################
   ####       Calculate the logit tensor size      ####
   ####################################################
-  local logit_size=$((BATCH_SIZE * seq_len * vocab_size * 8))
+	# Context logit = input_len*vocab_size*float32*batch_size
+	# Generation logit = output_len*vocab_size*float32*batch_size
+	#
+  local logit_size=$((BATCH_SIZE * seq_len * vocab_size * 16))
   logit_size_mib=$(echo "scale=2; ${logit_size} / (1024 * 1024)" | bc)
   echo "Logit size: ${logit_size_mib} MiB"
 
@@ -310,7 +332,7 @@ function calculate_gpu_mem_usage(){
   fi
 
   if (( $(echo "${result} < ${memory_per_gpu}" | bc -l) )); then
-    KV_FRACTION=0.99
+    KV_FRACTION=0.4
   else
     if [[ ${PPL_OPTION} != "" ]]; then
       KV_FRACTION=$(echo "scale=2; (${memory_per_gpu} - ${total_weight_size_mib} - ${activation_size_mib} - ${logit_size_mib}) / ${kv_cache_size_mib}" | bc -l)
@@ -324,8 +346,6 @@ function calculate_gpu_mem_usage(){
 
 }
 
-
-
 for PRECISION in "${prec[@]}"; do
   UNIFIED_CKPT_PATH="${MODEL_PATH}/trt_llm/${MODEL_NAME}/${MODEL_SIZE}/${PRECISION}/tp${WORLD_SIZE}"
   if [[ -f /.dockerenv ]]; then
@@ -336,13 +356,10 @@ for PRECISION in "${prec[@]}"; do
 
   if [[ ${PRECISION:5} == "awq" || ${PRECISION:5} == "sq" ]]; then
     PLUGIN="bfloat16"
-    TYPED="--strongly_type"
   elif [[ ${PRECISION:5} == "wo" ]]; then
     PLUGIN="bfloat16"
-    TYPED=""
   else
     PLUGIN="float16"
-    TYPED=""
   fi
 
   if [[ -f ${HF_MODEL_PATH}/config.json ]]; then
@@ -409,10 +426,29 @@ for PRECISION in "${prec[@]}"; do
   if [[ ! -d "${ENGINE_PATH}" ]]; then
     mkdir -p ${ENGINE_PATH}
   fi
+
+  if [[ -f ${ENGINE_PATH}/config.json ]]; then
+    max_batch_size=$(jq -r '.build_config.max_batch_size' ${ENGINE_PATH}/config.json)
+    if (( max_batch_size < ${BATCH_SIZE} )); then
+      echo "Error: max_batch_size is smaller than BATCH_SIZE"
+      while true; do
+        read -p "Do you want to construct the engine? (y/n): " yn
+        case $yn in
+          [Yy]* )
+            echo "Continue"; rm ${ENGINE_PATH}/*.engine; break;;
+          [Nn]* )
+            exit ;;
+          * )
+            echo "Please answer yes or no." ;;
+        esac
+      done
+    fi
+  fi
+
   if [[ -z $(find "${ENGINE_PATH}" -maxdepth 1 -name "*.engine") ]]; then
     trtllm-build --checkpoint_dir ${UNIFIED_CKPT_PATH} --gemm_plugin ${PLUGIN} \
     --gpt_attention_plugin ${PLUGIN} --lookup_plugin ${PLUGIN} --max_batch_size ${BATCH_SIZE} \
-    --max_input_len ${MAX_INPUT_LEN} ${TYPED} --max_output_len ${MAX_OUTPUT_LEN} --log_level verbose --profiling_verbosity detailed --use_paged_context_fmha enable \
+    --max_input_len ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} --log_level verbose --profiling_verbosity detailed --use_paged_context_fmha enable \
     ${PPL_OPTION} --enable_debug_output --enable_xqa enable --context_fmha enable \
     --output_dir ${ENGINE_PATH} > ${ENGINE_PATH}/build.log
   fi
@@ -477,7 +513,7 @@ for PRECISION in "${prec[@]}"; do
 
     python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
     --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-    --data_type ${PLUGIN} --debug_mode > ${PROFILE_OUTPUT_PATH}/ppl_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
+    --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
   fi
 
 done
