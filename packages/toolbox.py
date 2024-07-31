@@ -1,3 +1,4 @@
+#!python3
 import torch
 from transformers import SwitchTransformersModel
 import pandas as pd

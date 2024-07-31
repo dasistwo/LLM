@@ -1,3 +1,4 @@
+#!python3
 from transformers import AutoModelForCausalLM, AutoTokenizer, GPTQConfig, AwqConfig, AutoConfig
 import torch
 import argparse
@@ -43,10 +44,6 @@ args = parser.parse_args()
 
 # get the model from the user input or command line argument
 model_id = args.model_id if args.model_id else input("Enter the model name: ")
-
-# This is the private token. Be careful not to share it with anyone.
-tok = "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"
-login(tok)
 
 # some Models cannot handle 4096 sequence length, check the model's config.
 config = AutoConfig.from_pretrained(model_id)
@@ -125,9 +122,6 @@ quant_model = AutoModelForCausalLM.from_pretrained(
 
 # This is the private token. Be careful not to share it with anyone.
 if args.push_to_hub:
-    tok = "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"
-    login(tok)
-
     if quantization_config.desc_act is False:
         branch = "main"
     else:

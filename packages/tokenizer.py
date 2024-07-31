@@ -1,3 +1,4 @@
+#!python3
 from transformers import AutoTokenizer
 import torch
 import numpy as np
@@ -78,6 +79,8 @@ else:
 model_id_prefix = args.model_id.split("/")[-2:]
 if model_id_prefix[-1] == model_id_prefix[-1].split("-")[0]:
     model_id_prefix = model_id_prefix[:-1]
+else:
+    model_id_prefix[-1] = model_id_prefix[-1].split("-")[0]
 model_id_prefix = "".join(model_id_prefix)
-filename = f"{model_id_prefix}_encode{args.batch_size}x{args.length}.npy"
+filename = f"{model_id_prefix}_{args.batch_size}x{args.length}.npy"
 np.save(filename, output)

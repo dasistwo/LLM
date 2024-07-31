@@ -4,6 +4,7 @@
 BATCH_SIZE=8
 MAX_INPUT_LEN=256
 MAX_OUTPUT_LEN=256
+MAX_SEQ_LEN=512
 WORLD_SIZE=1
 IS_DOCKER=0
 PPL_OPTION=""
@@ -184,6 +185,7 @@ if [[ ${PPL_OPTION} != "" ]]; then
   fi
 fi
 
+MAX_SEQ_LEN=$(( MAX_INPUT_LEN + MAX_OUTPUT_LEN ))
 CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
 HF_MODEL_PATH="${MODEL_PATH}/hf/${MODEL_NAME}/${MODEL_SIZE}"
 
@@ -297,10 +299,8 @@ function calculate_gpu_mem_usage(){
   ####    Calculate KV cache size of the model    ####
   ####################################################
 
-  local seq_len=$((MAX_INPUT_LEN + MAX_OUTPUT_LEN))
-
   # Assume the maximum kv_cache_size, which doesn't use paged attention and kv cache quantization.
-  local kv_cache_size=$((BATCH_SIZE * seq_len * num_hidden_layers * num_key_value_heads * head_size * 2))
+  local kv_cache_size=$((BATCH_SIZE * MAX_SEQ_LEN * num_hidden_layers * num_key_value_heads * head_size * 2))
   kv_cache_size_mib=$(echo "scale=2; ${kv_cache_size} / (1024 * 1024)" | bc)
   echo "KV Cache size: ${kv_cache_size_mib} MiB"
 
@@ -312,7 +312,7 @@ function calculate_gpu_mem_usage(){
   # mlp 1st FC out = MAX_BS x MAX_INP_LEN x inter size
   # mlp activation out (assume not fused in plugin mode) = 1st FC out
 
-  local activation_size=$(((BATCH_SIZE * seq_len * hidden_size * 4 + BATCH_SIZE * seq_len * intermediate_size * 2) * 2))
+  local activation_size=$(((BATCH_SIZE * MAX_SEQ_LEN * hidden_size * 4 + BATCH_SIZE * MAX_SEQ_LEN * intermediate_size * 2) * 2))
   activation_size_mib=$(echo "scale=2; ${activation_size} / (1024 * 1024)" | bc)
   echo "Activation size: ${activation_size_mib} MiB"
 
@@ -322,7 +322,7 @@ function calculate_gpu_mem_usage(){
 	# Context logit = input_len*vocab_size*float32*batch_size
 	# Generation logit = output_len*vocab_size*float32*batch_size
 	#
-  local logit_size=$((BATCH_SIZE * seq_len * vocab_size * 16))
+  local logit_size=$((BATCH_SIZE * MAX_SEQ_LEN * vocab_size * 16))
   logit_size_mib=$(echo "scale=2; ${logit_size} / (1024 * 1024)" | bc)
   echo "Logit size: ${logit_size_mib} MiB"
 
@@ -332,7 +332,7 @@ function calculate_gpu_mem_usage(){
   fi
 
   if (( $(echo "${result} < ${memory_per_gpu}" | bc -l) )); then
-    KV_FRACTION=0.4
+    KV_FRACTION=0.9
   else
     if [[ ${PPL_OPTION} != "" ]]; then
       KV_FRACTION=$(echo "scale=2; (${memory_per_gpu} - ${total_weight_size_mib} - ${activation_size_mib} - ${logit_size_mib}) / ${kv_cache_size_mib}" | bc -l)
@@ -448,7 +448,8 @@ for PRECISION in "${prec[@]}"; do
   if [[ -z $(find "${ENGINE_PATH}" -maxdepth 1 -name "*.engine") ]]; then
     trtllm-build --checkpoint_dir ${UNIFIED_CKPT_PATH} --gemm_plugin ${PLUGIN} \
     --gpt_attention_plugin ${PLUGIN} --lookup_plugin ${PLUGIN} --max_batch_size ${BATCH_SIZE} \
-    --max_input_len ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} --log_level verbose --profiling_verbosity detailed --use_paged_context_fmha enable \
+    --max_input_len ${MAX_INPUT_LEN} --max_seq_len ${MAX_SEQ_LEN} --log_level verbose \
+    --profiling_verbosity detailed --use_paged_context_fmha enable \
     ${PPL_OPTION} --enable_debug_output --enable_xqa enable --context_fmha enable \
     --output_dir ${ENGINE_PATH} > ${ENGINE_PATH}/build.log
   fi
@@ -464,7 +465,8 @@ for PRECISION in "${prec[@]}"; do
     echo "------------------------------------"
     SCRIPT_PATH=$(dirname "$0")
     RUNFILE_PATH=$(dirname ${RUNFILE_INPUT})
-    python3 ${SCRIPT_PATH}/packages/tokenizer.py --model_id ${HF_MODEL_PATH} --length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --output_path ${RUNFILE_PATH}
+    python3 ${SCRIPT_PATH}/packages/tokenizer.py --model_id ${HF_MODEL_PATH} --length ${MAX_INPUT_LEN} \
+    --batch_size ${BATCH_SIZE} --output_path ${RUNFILE_PATH}
   fi
 
   echo "Calculating gpu memory usage..."
@@ -477,7 +479,7 @@ for PRECISION in "${prec[@]}"; do
     echo "------------------------------------"
     nsys profile -t cuda,nvtx,cublas-verbose,cudnn,cusparse-verbose -b fp \
     --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE} -f true \
-    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
+    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_seq_len ${MAX_SEQ_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
   elif [[ -n "$NCU_OPTION" ]]; then
@@ -496,24 +498,35 @@ for PRECISION in "${prec[@]}"; do
     fi
     ncu --set full --nvtx -k ${NCU_KERNEL} -s ${NCU_SKIP_COUNT} -c ${NCU_LAUNCH_COUNT} --target-processes all -f \
     -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX} \
-    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_output_len ${MAX_OUTPUT_LEN} \
+    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_seq_len ${MAX_SEQ_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
 	else 
     echo "------------------------------------"
     echo "|  Evaluating TensorRT-LLM engine  |"
     echo "------------------------------------"
-		if [[ ${PPL_OPTION} != "" ]]; then
-		  PPL_OPTION="--eval_ppl"
-		fi
+    if [[ ${PPL_OPTION} != "" ]]; then
+        PPL_OPTION="--eval_ppl"
+        if [[ ! -d "${PROFILE_OUTPUT_PATH}/ppl_log" ]]; then
+          mkdir -p ${PROFILE_OUTPUT_PATH}/ppl_log
+        fi
 
-    if [[ ! -d "${PROFILE_OUTPUT_PATH}/ppl_log" ]]; then
-      mkdir -p ${PROFILE_OUTPUT_PATH}/ppl_log
+        python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
+        --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
+        ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
+    
+    else
+        if [[ ! -d "${PROFILE_OUTPUT_PATH}/tokpersec_log" ]]; then
+          mkdir -p ${PROFILE_OUTPUT_PATH}/tokpersec_log
+        fi
+
+        python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
+        --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
+        ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/tokpersec_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}.log
     fi
 
-    python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
-    --max_input_length ${MAX_INPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-    --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
   fi
 
 done
