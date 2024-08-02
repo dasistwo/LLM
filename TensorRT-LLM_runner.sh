@@ -8,6 +8,7 @@ MAX_SEQ_LEN=512
 WORLD_SIZE=1
 IS_DOCKER=0
 PPL_OPTION=""
+TRTLLM_VER="rel"
 
 declare -a prec=()
 while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
@@ -151,6 +152,9 @@ if [[ -n "$ALL_PREC" ]]; then
 fi
 
 MODEL_VER=$(echo ${MODEL_SIZE} | cut -d'-' -f1)
+TRTLLM_VER=$(pushd ~ && python -c "import tensorrt_llm; print(tensorrt_llm.__version__)" | tail -n 1 && popd)
+TRTLLM_VER=$(echo ${TRTLLM_VER} | tail -n 2 | head -n 1)
+if [[ ${TRTLLM_VER} == *"dev"* ]]; then TRTLLM_VER="dev"; else TRTLLM_VER="rel"; fi
 
 if [[ -f /.dockerenv ]]; then
     TRTLLM_EXAMPLE_PATH=/app/tensorrt_llm/examples
@@ -478,8 +482,8 @@ for PRECISION in "${prec[@]}"; do
     echo "|  Profiling with NSYS profiler    |"
     echo "------------------------------------"
     nsys profile -t cuda,nvtx,cublas-verbose,cudnn,cusparse-verbose -b fp \
-    --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE} -f true \
-    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_seq_len ${MAX_SEQ_LEN} \
+    --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${TRTLLM_VER} -f true \
+    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_input_length ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
   elif [[ -n "$NCU_OPTION" ]]; then
@@ -497,8 +501,8 @@ for PRECISION in "${prec[@]}"; do
       SUFFIX="sum"
     fi
     ncu --set full --nvtx -k ${NCU_KERNEL} -s ${NCU_SKIP_COUNT} -c ${NCU_LAUNCH_COUNT} --target-processes all -f \
-    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX} \
-    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_seq_len ${MAX_SEQ_LEN} \
+    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX}_${TRTLLM_VER} \
+    python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_input_length ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
 	else 
@@ -507,24 +511,24 @@ for PRECISION in "${prec[@]}"; do
     echo "------------------------------------"
     if [[ ${PPL_OPTION} != "" ]]; then
         PPL_OPTION="--eval_ppl"
-        if [[ ! -d "${PROFILE_OUTPUT_PATH}/ppl_log" ]]; then
-          mkdir -p ${PROFILE_OUTPUT_PATH}/ppl_log
+        if [[ ! -d "${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}" ]]; then
+          mkdir -p ${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}
         fi
 
         python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
         --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
         ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
     
     else
-        if [[ ! -d "${PROFILE_OUTPUT_PATH}/tokpersec_log" ]]; then
-          mkdir -p ${PROFILE_OUTPUT_PATH}/tokpersec_log
+        if [[ ! -d "${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}" ]]; then
+          mkdir -p ${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}
         fi
 
         python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
         --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
         ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/tokpersec_log/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}.log
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}.log
     fi
 
   fi
