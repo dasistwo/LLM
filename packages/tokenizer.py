@@ -13,7 +13,7 @@ parser.add_argument(
     "--model_id",
     type=str,
     help="Model ID to use for tokenization",
-    default="/data/storage1/model/hf/gemma/1-7B",
+    default="/home/jychoi/model/hf/gemma/1-7B",
 )
 parser.add_argument(
     "--length", type=int, default=256, help="Minimum length of the tokenized text"
@@ -50,7 +50,7 @@ else:
     import os
     from tqdm import tqdm
     
-    dataset_path = "/data/storage1/model/data/fineweb/sample/10BT"
+    dataset_path = "/home/jychoi/model/data/fineweb/sample/10BT"
     if not os.path.exists(dataset_path):
         # Check whether if to download the dataset
         download = input("Download the dataset? (y/n): ")

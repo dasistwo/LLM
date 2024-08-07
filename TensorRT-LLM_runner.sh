@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/zsh
 
 # Default values
 BATCH_SIZE=8
@@ -69,7 +69,7 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
     shift; NCU_OPTION=1
     echo "Profile with NCU profiler."
     if [[ "$#" -ge 3 ]] && [[ ! $1 == -* ]] && [[ ! $2 == -* ]] && [[ ! $3 == -* ]]; then
-		    NCU_KERNEL=$1
+		NCU_KERNEL=$1
         NCU_SKIP_COUNT=$2
         NCU_LAUNCH_COUNT=$3
 
@@ -98,17 +98,16 @@ while [[ "$1" =~ ^- && ! "$1" == -- ]]; do case $1 in
         echo "NCU Kernel: ${NCU_KERNEL}"
         echo "NCU Skip Count: ${NCU_SKIP_COUNT}"
         echo "NCU Launch Count: ${NCU_LAUNCH_COUNT}"
+        shift
     else
         echo "Error: -ncu requires 3 arguments (String, Integer, Integer) or no arguments for prompt input."
         exit 1
     fi
-		shift
     ;;
 
   -nsys ) 
     shift; NSYS_OPTION=1
     echo "Profile with NSYS profiler."
-    shift
     ;;
   -h | --help )
     echo "Usage: [option] [argument]"
@@ -482,7 +481,7 @@ for PRECISION in "${prec[@]}"; do
     echo "|  Profiling with NSYS profiler    |"
     echo "------------------------------------"
     nsys profile -t cuda,nvtx,cublas-verbose,cudnn,cusparse-verbose -b fp \
-    --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${TRTLLM_VER} -f true \
+    --output ${PROFILE_OUTPUT_PATH}/nsys-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}_${TRTLLM_VER} -f true \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_input_length ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
@@ -495,16 +494,16 @@ for PRECISION in "${prec[@]}"; do
 		echo "The kernel name is ${NCU_KERNEL}"
     echo "The launch count is ${NCU_LAUNCH_COUNT}"
     
-    if [[ NCU_SKIP_COUNT -ge $((NUM_HIDDEN_LAYERS*5)) ]]; then
+    #if [[ NCU_SKIP_COUNT -ge $((NUM_HIDDEN_LAYERS*5)) ]]; then
       SUFFIX="gen"
-    else
-      SUFFIX="sum"
-    fi
+    #else
+    #  SUFFIX="sum"
+    #fi
     ncu --set full --nvtx -k ${NCU_KERNEL} -s ${NCU_SKIP_COUNT} -c ${NCU_LAUNCH_COUNT} --target-processes all -f \
-    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${SUFFIX}_${TRTLLM_VER} \
+    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}_${SUFFIX}_${TRTLLM_VER} \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_input_length ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
-    --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} --kv_cache_enable_block_reuse 
+    --kv_cache_free_gpu_memory_fraction ${KV_FRACTION}  --kv_cache_enable_block_reuse 
 	else 
     echo "------------------------------------"
     echo "|  Evaluating TensorRT-LLM engine  |"
@@ -518,7 +517,7 @@ for PRECISION in "${prec[@]}"; do
         python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
         --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
         ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}.log
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}.log
     
     else
         if [[ ! -d "${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}" ]]; then
