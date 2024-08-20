@@ -189,7 +189,6 @@ if [[ ${PPL_OPTION} != "" ]]; then
 fi
 
 MAX_SEQ_LEN=$(( MAX_INPUT_LEN + MAX_OUTPUT_LEN ))
-CKPT_PATH="${MODEL_PATH}/torch/${MODEL_NAME}/${MODEL_SIZE}"
 HF_MODEL_PATH="${MODEL_PATH}/hf/${MODEL_NAME}/${MODEL_SIZE}"
 
 # Maybe tokenizer.json doesn't work for all models
@@ -211,19 +210,19 @@ HF_MODEL_PATH="${MODEL_PATH}/hf/${MODEL_NAME}/${MODEL_SIZE}"
 
 function gemma_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/gemma/convert_checkpoint.py
-  python3 ${convert_py} --ckpt-type torch --model-dir $1 --dtype $3 --world-size ${WORLD_SIZE} --output-model-dir $2
+  python3 ${convert_py} --ckpt-type hf --model-dir $1 --dtype $3 --world-size ${WORLD_SIZE} --output-model-dir $2
   return $?
 }
 
 function llama_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/llama/convert_checkpoint.py
-  python3 ${convert_py} --meta_ckpt_dir $1 --dtype $3 --tp_size ${WORLD_SIZE} --output_dir $2
+  python3 ${convert_py} --model_dir $1 --dtype $3 --tp_size ${WORLD_SIZE} --output_dir $2
   return $?
 }
 
 function quantize_convert(){
   local convert_py=${TRTLLM_EXAMPLE_PATH}/quantization/quantize.py
-  python3 ${convert_py} --model_dir $1 --dtype bfloat16 --qformat $4 --output_dir $2 --tp_size ${WORLD_SIZE}
+  python3 ${convert_py} --model_dir $1 --dtype float16 --qformat $4 --output_dir $2 --tp_size ${WORLD_SIZE}
   return $?
 }
 
@@ -358,9 +357,9 @@ for PRECISION in "${prec[@]}"; do
   fi
 
   if [[ ${PRECISION:5} == "awq" || ${PRECISION:5} == "sq" ]]; then
-    PLUGIN="bfloat16"
+    PLUGIN="float16"
   elif [[ ${PRECISION:5} == "wo" ]]; then
-    PLUGIN="bfloat16"
+    PLUGIN="float16"
   else
     PLUGIN="float16"
   fi
@@ -392,16 +391,12 @@ for PRECISION in "${prec[@]}"; do
     echo "|      Converting checkpoints      |"
     echo "------------------------------------"
     if [[ $PRECISION == "fp16" ]]; then
-      if [[ ! -d "${CKPT_PATH}" ]]; then
-        echo "Checkpoint not found"
-        exit
-      fi
       case $MODEL_NAME in
         "gemma")
-          gemma_convert ${CKPT_PATH} ${UNIFIED_CKPT_PATH} ${PLUGIN}
+          gemma_convert ${HF_MODEL_PATH} ${UNIFIED_CKPT_PATH} ${PLUGIN}
           ;;
         "llama")
-          llama_convert ${CKPT_PATH} ${UNIFIED_CKPT_PATH} ${PLUGIN}
+          llama_convert ${HF_MODEL_PATH} ${UNIFIED_CKPT_PATH} ${PLUGIN}
           ;;
         *)
           echo "Model name not found"
@@ -500,7 +495,7 @@ for PRECISION in "${prec[@]}"; do
     #  SUFFIX="sum"
     #fi
     ncu --set full --nvtx -k ${NCU_KERNEL} -s ${NCU_SKIP_COUNT} -c ${NCU_LAUNCH_COUNT} --target-processes all -f \
-    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}_${SUFFIX}_${TRTLLM_VER} \
+    -o ${PROFILE_OUTPUT_PATH}/ncu-rep/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}_${SUFFIX}_${CONDA_PREFIX##*/}_${TRTLLM_VER} \
     python3 ${TRTLLM_EXAMPLE_PATH}/run.py --engine_dir ${ENGINE_PATH} --max_input_length ${MAX_INPUT_LEN} --max_output_len ${MAX_OUTPUT_LEN} \
     --input_file ${RUNFILE_INPUT} ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} \
     --kv_cache_free_gpu_memory_fraction ${KV_FRACTION}  --kv_cache_enable_block_reuse 
