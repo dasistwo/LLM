@@ -512,7 +512,7 @@ for PRECISION in "${prec[@]}"; do
         python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
         --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
         ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}.log
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/ppl_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}_${SUFFIX}_${CONDA_PREFIX##*/}_${TRTLLM_VER}.log
     
     else
         if [[ ! -d "${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}" ]]; then
@@ -522,7 +522,7 @@ for PRECISION in "${prec[@]}"; do
         python3 ${TRTLLM_EXAMPLE_PATH}/summarize.py --test_trt_llm --engine_dir ${ENGINE_PATH} \
         --max_input_length ${MAX_INPUT_LEN} --output_len ${MAX_OUTPUT_LEN} --batch_size ${BATCH_SIZE} --max_ite 5 ${PPL_OPTION} \
         ${VOCAB_FILE_OPTION} ${VOCAB_FILE_PATH} --kv_cache_free_gpu_memory_fraction ${KV_FRACTION} \
-        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}.log
+        --data_type ${PLUGIN} > ${PROFILE_OUTPUT_PATH}/tokpersec_log/${TRTLLM_VER}/${MODEL_NAME}_${MODEL_SIZE}_${PRECISION}_batch${BATCH_SIZE}_${MAX_INPUT_LEN}x${MAX_OUTPUT_LEN}_${SUFFIX}_${CONDA_PREFIX##*/}_${TRTLLM_VER}.log
     fi
 
   fi
